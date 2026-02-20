@@ -1,0 +1,7 @@
+streamlit
+groq
+openai
+pydub
+sqlite3
+matplotlib
+python-dotenv
