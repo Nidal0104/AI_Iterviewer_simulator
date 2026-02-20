@@ -3,7 +3,7 @@ from groq import Groq
 import json
 
 client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-MODEL = "llama3-70b-8192"
+MODEL = "llama-3.1-8b-instant"
 
 def evaluate_answer(job_role, question, answer):
 
