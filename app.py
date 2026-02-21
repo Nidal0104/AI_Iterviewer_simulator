@@ -27,12 +27,23 @@ job_roles = [
 st.sidebar.header("Interview Setup")
 job_role = st.sidebar.selectbox("Select Job Role", job_roles)
 
+# -------------------------
+# SESSION STATE FIX
+# -------------------------
+if "show_feedback" not in st.session_state:
+    st.session_state.show_feedback = False
+
+if "last_result" not in st.session_state:
+    st.session_state.last_result = None
+
 if st.sidebar.button("Start Interview"):
     st.session_state.questions = generate_questions(job_role)
     st.session_state.current = 0
     st.session_state.scores = []
     st.session_state.qa_data = []
     st.session_state.job_role = job_role
+    st.session_state.show_feedback = False
+    st.session_state.last_result = None
 
 
 if "questions" in st.session_state:
@@ -51,27 +62,52 @@ if "questions" in st.session_state:
 
         audio_input = st.file_uploader("Or Upload Voice Answer", type=["mp3", "wav"])
 
-        if st.button("Submit Answer"):
+        # -------------------------
+        # SUBMIT BUTTON
+        # -------------------------
+        if not st.session_state.show_feedback:
 
-            if audio_input:
-                answer = speech_to_text(audio_input)
+            if st.button("Submit Answer"):
 
-            result = evaluate_answer(job_role, question, answer)
+                if audio_input:
+                    answer = speech_to_text(audio_input)
+
+                result = evaluate_answer(job_role, question, answer)
+
+                # Save result in session
+                st.session_state.last_result = result
+                st.session_state.show_feedback = True
+
+                st.session_state.scores.append(result["overall_score"])
+                st.session_state.qa_data.append({
+                    "question": question,
+                    "user_answer": answer,
+                    **result
+                })
+
+                st.rerun()
+
+        # -------------------------
+        # FEEDBACK SECTION (FIXED)
+        # -------------------------
+        if st.session_state.show_feedback and st.session_state.last_result:
+
+            result = st.session_state.last_result
 
             st.write("### Feedback")
             st.write(result["feedback"])
+
             st.write("### Improved Answer")
             st.write(result["improved_answer"])
 
-            st.session_state.scores.append(result["overall_score"])
-            st.session_state.qa_data.append({
-                "question": question,
-                "user_answer": answer,
-                **result
-            })
+            # NEXT QUESTION BUTTON
+            if st.button("Next Question"):
 
-            st.session_state.current += 1
-            st.rerun()
+                st.session_state.current += 1
+                st.session_state.show_feedback = False
+                st.session_state.last_result = None
+
+                st.rerun()
 
     else:
 
