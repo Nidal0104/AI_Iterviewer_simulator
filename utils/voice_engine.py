@@ -1,26 +1,14 @@
 import streamlit as st
-from openai import OpenAI
+from gtts import gTTS
 import tempfile
-
-# Ensure API key exists
-if "OPENAI_API_KEY" not in st.secrets:
-    st.error("OPENAI_API_KEY not found in Streamlit Secrets.")
-    st.stop()
-
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 
 def text_to_speech(text):
     try:
-        response = client.audio.speech.create(
-            model="gpt-4o-mini-tts",
-            voice="alloy",
-            input=text
-        )
+        tts = gTTS(text=text, lang="en")
 
         temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
-        temp_file.write(response.content)
-        temp_file.close()
+        tts.save(temp_file.name)
 
         return temp_file.name
 
@@ -31,14 +19,5 @@ def text_to_speech(text):
 
 
 def speech_to_text(audio_file):
-    try:
-        transcript = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file
-        )
-        return transcript.text
-
-    except Exception as e:
-        st.error("Speech-to-Text Error:")
-        st.write(str(e))
-        return ""
+    st.warning("Speech-to-Text disabled (OpenAI removed due to quota).")
+    return ""
