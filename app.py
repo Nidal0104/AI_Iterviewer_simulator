@@ -1,113 +1,160 @@
 import streamlit as st
-from utils.database import init_db, save_interview, save_question_answer, get_interview_history
+from utils.database import init_db, save_interview, save_question_answer
 from utils.llm_engine import generate_questions
 from utils.evaluation_engine import evaluate_answer
-from utils.voice_engine import text_to_speech, speech_to_text
-from utils.analytics import calculate_overall, plot_scores
-import tempfile
+from utils.voice_engine import text_to_speech
+from utils.analytics import calculate_overall
+
+# -----------------------------
+# INITIAL SETUP
+# -----------------------------
+st.set_page_config(page_title="AI Interview Simulator", layout="centered")
 
 init_db()
 
-st.set_page_config(page_title="AI Interview Simulator", layout="wide")
+st.title("🎤 AI Voice Interview Simulator")
 
-st.title("🎯 AI Voice Interview Simulator")
+# -----------------------------
+# SESSION STATE INITIALIZATION
+# -----------------------------
+if "interview_started" not in st.session_state:
+    st.session_state.interview_started = False
 
-job_roles = [
-    "Software Engineer",
-    "AI Engineer",
-    "Data Scientist",
-    "Database Engineer",
-    "Business Analyst",
-    "Digital Marketer",
-    "Teacher",
-    "Lawyer",
-    "Civil Servant"
-]
+if "questions" not in st.session_state:
+    st.session_state.questions = []
 
-st.sidebar.header("Interview Setup")
-job_role = st.sidebar.selectbox("Select Job Role", job_roles)
+if "current_question" not in st.session_state:
+    st.session_state.current_question = 0
 
-if st.sidebar.button("Start Interview"):
-    st.session_state.questions = generate_questions(job_role)
-    st.session_state.current = 0
+if "evaluation_result" not in st.session_state:
+    st.session_state.evaluation_result = None
+
+if "show_feedback" not in st.session_state:
+    st.session_state.show_feedback = False
+
+if "scores" not in st.session_state:
     st.session_state.scores = []
-    st.session_state.qa_data = []
-    st.session_state.job_role = job_role
 
+# -----------------------------
+# INTERVIEW SETUP
+# -----------------------------
+if not st.session_state.interview_started:
 
-if "questions" in st.session_state:
+    job_role = st.text_input("Enter Job Role")
 
-    if st.session_state.current < len(st.session_state.questions):
+    if st.button("Start Interview"):
 
-        question = st.session_state.questions[st.session_state.current]
+        if job_role.strip() == "":
+            st.warning("Please enter a job role.")
+        else:
+            questions = generate_questions(job_role)
 
-        st.subheader(f"Question {st.session_state.current + 1}")
-        st.write(question)
+            if questions:
+                st.session_state.questions = questions
+                st.session_state.job_role = job_role
+                st.session_state.interview_started = True
+                st.session_state.current_question = 0
+                st.rerun()
 
-        audio_path = text_to_speech(question)
-        st.audio(audio_path)
+# -----------------------------
+# INTERVIEW FLOW
+# -----------------------------
+else:
 
-        answer = st.text_area("Your Answer")
+    questions = st.session_state.questions
+    index = st.session_state.current_question
 
-        audio_input = st.file_uploader("Or Upload Voice Answer", type=["mp3", "wav"])
+    # If interview completed
+    if index >= len(questions):
 
-        if st.button("Submit Answer"):
+        st.success("🎉 Interview Completed!")
 
-            if audio_input:
-                answer = speech_to_text(audio_input)
+        overall_score = calculate_overall(st.session_state.scores)
 
-            result = evaluate_answer(job_role, question, answer)
+        st.subheader("📊 Final Score")
+        st.write(f"Overall Performance: {overall_score}/10")
 
-            st.write("### Feedback")
-            st.write(result["feedback"])
-            st.write("### Improved Answer")
-            st.write(result["improved_answer"])
-
-            st.session_state.scores.append(result["overall_score"])
-            st.session_state.qa_data.append({
-                "question": question,
-                "user_answer": answer,
-                **result
-            })
-
-            st.session_state.current += 1
+        if st.button("Restart Interview"):
+            for key in st.session_state.keys():
+                del st.session_state[key]
             st.rerun()
 
     else:
 
-        overall = calculate_overall(st.session_state.scores)
-        result_text = "PASS" if overall >= 7 else "FAIL"
+        question = questions[index]
 
-        st.success(f"Interview Completed - {result_text}")
-        st.metric("Overall Score", round(overall, 2))
+        st.subheader(f"Question {index + 1}")
+        st.write(question)
 
-        interview_id = save_interview(
-            st.session_state.job_role,
-            overall,
-            result_text
-        )
+        # 🔊 Text to Speech
+        audio_path = text_to_speech(question)
+        if audio_path:
+            st.audio(audio_path)
 
-        for qa in st.session_state.qa_data:
-            save_question_answer(interview_id, qa)
+        answer = st.text_area("Your Answer")
 
-        metrics = {
-            "Technical": sum(q["technical_score"] for q in st.session_state.qa_data) / len(st.session_state.qa_data),
-            "Grammar": sum(q["grammar_score"] for q in st.session_state.qa_data) / len(st.session_state.qa_data),
-            "Clarity": sum(q["clarity_score"] for q in st.session_state.qa_data) / len(st.session_state.qa_data),
-            "Confidence": sum(q["confidence_score"] for q in st.session_state.qa_data) / len(st.session_state.qa_data)
-        }
+        # -----------------------------
+        # SUBMIT BUTTON
+        # -----------------------------
+        if not st.session_state.show_feedback:
 
-        fig = plot_scores(metrics)
-        st.pyplot(fig)
+            if st.button("Submit Answer"):
 
-        if st.button("New Interview"):
-            st.session_state.clear()
-            st.rerun()
+                if answer.strip() == "":
+                    st.warning("Please enter your answer.")
+                else:
+                    result = evaluate_answer(
+                        st.session_state.job_role,
+                        question,
+                        answer
+                    )
 
+                    # Save score
+                    st.session_state.scores.append(result["overall_score"])
 
-st.sidebar.header("Interview History")
+                    # Save evaluation to state
+                    st.session_state.evaluation_result = result
+                    st.session_state.show_feedback = True
 
-if st.sidebar.button("View History"):
-    history = get_interview_history()
-    for row in history:
-        st.sidebar.write(row)
+                    # Save to DB
+                    save_question_answer(
+                        question,
+                        answer,
+                        result["overall_score"],
+                        result["feedback"]
+                    )
+
+                    st.rerun()
+
+        # -----------------------------
+        # FEEDBACK SECTION
+        # -----------------------------
+        if st.session_state.show_feedback and st.session_state.evaluation_result:
+
+            result = st.session_state.evaluation_result
+
+            st.divider()
+            st.subheader("📊 Evaluation Result")
+
+            st.write(f"Technical Score: {result['technical_score']}/10")
+            st.write(f"Grammar Score: {result['grammar_score']}/10")
+            st.write(f"Clarity Score: {result['clarity_score']}/10")
+            st.write(f"Confidence Score: {result['confidence_score']}/10")
+            st.write(f"Overall Score: {result['overall_score']}/10")
+
+            st.subheader("💬 Feedback")
+            st.write(result["feedback"])
+
+            st.subheader("✨ Improved Answer")
+            st.write(result["improved_answer"])
+
+            # -----------------------------
+            # NEXT QUESTION BUTTON
+            # -----------------------------
+            if st.button("Next Question"):
+
+                st.session_state.current_question += 1
+                st.session_state.show_feedback = False
+                st.session_state.evaluation_result = None
+
+                st.rerun()
